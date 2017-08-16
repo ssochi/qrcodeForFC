@@ -23,7 +23,7 @@ function mkQrcode(path,tarUrl,callback) {
         })
 }
 function  downloadImg(path,url,callback) {
-        //²ÉÓÃrequestÄ£¿é£¬Ïò·þÎñÆ÷·¢ÆðÒ»´ÎÇëÇó£¬»ñÈ¡Í¼Æ¬×ÊÔ´
+        //é‡‡ç”¨requestæ¨¡å—ï¼Œå‘æœåŠ¡å™¨å‘èµ·ä¸€æ¬¡è¯·æ±‚ï¼ŒèŽ·å–å›¾ç‰‡èµ„æº
         request.head(url,function(err,res,body){
             if(err){
                 throw err
@@ -36,24 +36,25 @@ function  downloadImg(path,url,callback) {
 function addWaterMark(qrPath,imgPath,callback) {
         console.log('addWaterMark...')
         var sourceImg = images(imgPath);
-// ±ÈÈç·ÅÖÃÔÚÓÒÏÂ½Ç£¬ÏÈ»ñÈ¡Ô­Í¼µÄ³ß´çºÍË®Ó¡Í¼Æ¬³ß´ç
+// æ¯”å¦‚æ”¾ç½®åœ¨å³ä¸‹è§’ï¼Œå…ˆèŽ·å–åŽŸå›¾çš„å°ºå¯¸å’Œæ°´å°å›¾ç‰‡å°ºå¯¸
         var sWidth = sourceImg.width();
         var sHeight = sourceImg.height();
         var watermarkImg = images(qrPath).resize(sourceImg.width()/5);
         var wmWidth = watermarkImg.width();
         var wmHeight = watermarkImg.height();
         images(sourceImg)
-        // ÉèÖÃ»æÖÆµÄ×ø±êÎ»ÖÃ£¬ÓÒÏÂ½Ç¾àÀë 40px
+        // è®¾ç½®ç»˜åˆ¶çš„åæ ‡ä½ç½®ï¼Œå³ä¸‹è§’è·ç¦» 40px
             .draw(watermarkImg, sWidth - wmWidth - 0, sHeight - wmHeight - 0)
-            // ±£´æ¸ñÊ½»á×Ô¶¯Ê¶±ð
+            // ä¿å­˜æ ¼å¼ä¼šè‡ªåŠ¨è¯†åˆ«
             .save('/tmp/saveimg.jpg');
         callback("addWaterMark done")
 }
 module.exports.handler = function(event, context, callback) {
     console.log("event --> "+event.toString());
     event=JSON.parse(event)
-    var imgUrl=event.queryParameters.imgUrl
-    var tarUrl=event.queryParameters.tarUrl
+    var picUrl=event.queryParameters.imgUrl
+    var targetUrl=event.queryParameters.targetUrl
+    var target=event.queryParameters.target
     var nocahe = event.queryParameters.nocache
     var qrPath='/tmp/qrcode.jpg'
     var imgPath='/tmp/img.jpg'
@@ -65,7 +66,7 @@ module.exports.handler = function(event, context, callback) {
         },
         body: null
     };
-    var rePath=fnv.hash(imgUrl+tarUrl,64).str()+'.jpg';
+    var rePath=target;
     var ossRegion = "oss-" + "cn-shanghai";
     var client = new oss({
         region: ossRegion,
@@ -78,71 +79,59 @@ module.exports.handler = function(event, context, callback) {
         var result = yield client.list({
             prefix: 'qr/'+rePath
         });
-        if(nocahe!=false&&result.objects!=undefined){
-            console.log('target have cache');
-            var response = {
-                isBase64Encoded:false,
-                statusCode:303,
-                headers: {
-                    "x-custom-header" : "header value",
-                    "Location": 'http://test-what.oss-cn-shanghai.aliyuncs.com/'+ 'qr/'+rePath,
-                },
-                body: null
-            };
-            callback(null,response);
-        }else {
-            console.log('target have not cache');
-            try {
-                var target='qr/'+rePath
-                var tmpFile='/tmp/saveimg.jpg'
-                downloadImg(imgPath,imgUrl,function (back) {
-                    console.log('downloadImg callback -->'+back)
-                    mkQrcode(qrPath,tarUrl,function (back) {
-                        console.log('mkQrcode callback -->'+back)
-                        addWaterMark(qrPath,imgPath,function (back) {
-                            console.log('addWaterMark callback -->'+back)
-                            client.put(target, tmpFile).then(function (val) {
-                                console.log('Put object:', val);
-                                var response = {
-                                    isBase64Encoded:false,
-                                    statusCode:303,
-                                    headers: {
-                                        "x-custom-header" : "header value",
-                                        "Location": 'http://test-what.oss-cn-shanghai.aliyuncs.com/'+ 'qr/'+rePath,
-                                    },
-                                    body: null
-                                };
-                                callback(null,response);
-                                return;
-                            }).catch(function (err) {
-                                console.error('Failed to put object: %j', err);
-                                callback(null,response500)
-                                return;
-                            });
-                        })
+        
+        console.log('target have not cache');
+        try {
+            var target=rePath
+            var tmpFile='/tmp/saveimg.jpg'
+            downloadImg(imgPath,picUrl,function (back) {
+                console.log('downloadImg callback -->'+back)
+                mkQrcode(qrPath,targetUrl,function (back) {
+                    console.log('mkQrcode callback -->'+back)
+                    addWaterMark(qrPath,imgPath,function (back) {
+                        console.log('addWaterMark callback -->'+back)
+                        client.put(target, tmpFile).then(function (val) {
+                            console.log('Put object:', val);
+                            var content = {
+                                responseUrl:'http://test-what.oss-cn-shanghai.aliyuncs.com/'+target
+                            }
+                            var response = {
+                                isBase64Encoded:false,
+                                statusCode:200,
+                                headers: {
+                                    "x-custom-header" : "header value",
+                                },
+                                body:content
+                            };
+                            callback(null,response);
+                            return;
+                        }).catch(function (err) {
+                            console.error('Failed to put object: %j', err);
+                            callback(null,response500)
+                            return;
+                        });
                     })
                 })
-            }catch (err) {
-                console.log(err)
-                callback(null,response500)
-            }
+            })
+        }catch (err) {
+            console.log(err)
+            callback(null,response500)
         }
-        return;
     }).catch(function (err) {
         callback(null,response500);
     });
 };
 //downloadImg('img.jpg','http://www.orf.cc/upload_files/qb_news_/72/201606/1_kxw9j__.jpg')
 // addWaterMark('qrcode.jpg','img.jpg')
-var event = {
-    queryParameters:{
-        imgUrl:'http://attach2.scimg.cn/forum/201410/07/232336qwyo6q86ryxzoerq.jpg',
-        tarUrl:'http://www.bybutter.com/',
-        nocache:false
-    }
-}
-var content={}
-event=JSON.stringify(event)
-module.exports.handler(event,content,function (back) {
-    console.log(back)
-})
+// var event = {
+//     queryParameters:{
+//         imgUrl:'http://attach2.scimg.cn/forum/201410/07/232336qwyo6q86ryxzoerq.jpg',
+//         tarUrl:'http://www.bybutter.com/',
+//         nocache:false
+//     }
+// }
+// var content={}
+// event=JSON.stringify(event)
+// module.exports.handler(event,content,function (back) {
+//     console.log(back)
+// })
